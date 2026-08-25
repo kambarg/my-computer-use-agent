@@ -1,0 +1,92 @@
+# Local development stack. From the repository root:
+#   cp .env.example .env   # then set ANTHROPIC_API_KEY
+#   docker compose up --build
+#
+# Only the backend publishes a host port. Worker 6080/5900 stay on the
+# user-defined network; the backend proxies noVNC. Grow the pool by copying
+# a worker-* service and appending its URL to WORKER_URLS.
+
+name: computer-use
+
+x-worker: &worker
+  build:
+    context: .
+    dockerfile: docker/worker.Dockerfile
+    args:
+      BASE_IMAGE: ${WORKER_BASE_IMAGE:-ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest}
+  environment:
+    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    API_PROVIDER: ${API_PROVIDER:-anthropic}
+  # Desktop browsers (Firefox in the worker image) need a larger /dev/shm
+  # than Compose gives by default.
+  shm_size: "2gb"
+  init: true
+  expose:
+    - "8000"
+    - "6080"
+  networks:
+    - agent
+  healthcheck:
+    test:
+      [
+        "CMD",
+        "python",
+        "-c",
+        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
+      ]
+    interval: 5s
+    timeout: 5s
+    retries: 24
+    start_period: 45s
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+    networks:
+      - agent
+    restart: unless-stopped
+
+  worker-1:
+    <<: *worker
+  worker-2:
+    <<: *worker
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+asyncpg://app:app@postgres:5432/app
+      BLOB_DIR: /app/data/blobs
+      WORKER_URLS: http://worker-1:8000,http://worker-2:8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      worker-1:
+        condition: service_healthy
+      worker-2:
+        condition: service_healthy
+    networks:
+      - agent
+    restart: unless-stopped
+
+networks:
+  agent:
+    driver: bridge
+
+volumes:
+  pgdata:

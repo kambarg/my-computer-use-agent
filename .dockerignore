@@ -1,0 +1,17 @@
+# Keep the build context small. The worker image takes computer_use_demo from
+# its base image, not from this tree; the backend copies named directories.
+.venv
+.git
+.pytest_cache
+.ruff_cache
+**/__pycache__
+**/*.py[cod]
+data
+agents
+autonomous-coding
+browser-use-demo
+computer-use-best-practices
+computer-use-demo
+customer-support-agent
+financial-data-analyst
+managed-agents
