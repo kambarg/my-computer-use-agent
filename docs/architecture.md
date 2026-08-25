@@ -251,10 +251,26 @@ one, posts a prompt, tails `GET /sessions/{id}/events`, and embeds
 fetched from `/blobs/{key}`. Same origin, no build step — it is a
 demonstration of the backend, not a product surface.
 
+### Docker
+
+Local development is a Compose file at the repository root: Postgres,
+the backend, and a fixed pool of worker containers on a user-defined
+bridge (`agent`). Only the backend publishes a host port (`8000`).
+Worker 6080 and 5900 are not published; the backend reverse-proxies
+noVNC, so the browser never sees a worker address.
+
+Each `worker-*` service is one desktop. `WORKER_URLS` lists them by
+Compose DNS name (`http://worker-1:8000`, …). Grow the pool by adding
+another `worker-*` service and appending its URL. The loop, the tools,
+and the display stay together inside each worker — the topology that
+survives upstream constructing `ToolCollection` internally.
+
 ## Open decisions
 
 Collected from above, roughly in the order they need answering:
 
-1. Deployment topology (A, B, or C) — determines the concurrency model,
-   the Docker layout, and VNC routing.
-2. How upstream gets imported, given it is not a package.
+1. Deployment topology (A, B, or C) — local Compose uses a fixed pool
+   of dedicated worker containers (loop and tools in-process with the
+   desktop). Remote deployment can still choose otherwise.
+2. How upstream gets imported, given it is not a package. The worker
+   image inherits `computer_use_demo` from the upstream desktop image.
