@@ -2,10 +2,13 @@
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import FileResponse
 
+from backend.api.blobs import router as blobs_router
 from backend.api.desktop import router as desktop_router
 from backend.api.errors import install_error_handlers
 from backend.api.events import router as events_router
@@ -21,6 +24,8 @@ from backend.database import (
 )
 from backend.sessions import PoolAllocator, SessionManager
 from backend.streaming import EventBus, EventPublisher
+
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -71,10 +76,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(events_router)
     app.include_router(messages_router)
     app.include_router(desktop_router)
+    app.include_router(blobs_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:
         """Liveness only: it must answer before the database is reachable."""
         return {"status": "ok"}
+
+    @app.get("/")
+    async def demo_client() -> FileResponse:
+        return FileResponse(FRONTEND_DIR / "index.html")
+
+    @app.get("/app.js")
+    async def demo_script() -> FileResponse:
+        return FileResponse(FRONTEND_DIR / "app.js")
+
+    @app.get("/style.css")
+    async def demo_style() -> FileResponse:
+        return FileResponse(FRONTEND_DIR / "style.css")
 
     return app

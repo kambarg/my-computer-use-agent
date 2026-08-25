@@ -245,10 +245,11 @@ enough.
 
 ### Frontend
 
-A small HTML/JS client that demonstrates the APIs: create a session,
-send a prompt, watch progress arrive, and see the desktop alongside it.
-Deliberately plain — it is a demonstration of the backend, not a product
-surface.
+The backend serves `frontend/` at `/`. The page lists sessions, creates
+one, posts a prompt, tails `GET /sessions/{id}/events`, and embeds
+`/sessions/{id}/desktop` in an iframe. Screenshots in the log are
+fetched from `/blobs/{key}`. Same origin, no build step — it is a
+demonstration of the backend, not a product surface.
 
 ## Open decisions
 

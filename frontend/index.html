@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="permissions-policy" content="fullscreen=*" />
+    <title>Computer Use Agent</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <aside id="sidebar">
+      <header>
+        <h1>Sessions</h1>
+        <form id="new-session">
+          <label class="sr-only" for="session-title-input">Session title</label>
+          <input
+            id="session-title-input"
+            name="title"
+            type="text"
+            maxlength="200"
+            placeholder="Title (optional)"
+            autocomplete="off"
+          />
+          <button type="submit">New</button>
+        </form>
+      </header>
+      <ul id="session-list"></ul>
+    </aside>
+
+    <section id="conversation">
+      <header>
+        <div>
+          <h2 id="current-title">No session selected</h2>
+          <p id="current-status"></p>
+        </div>
+        <button type="button" id="delete-session" hidden>Delete</button>
+      </header>
+      <ol id="event-log"></ol>
+      <p id="banner" hidden></p>
+      <form id="prompt-form">
+        <label class="sr-only" for="prompt">Prompt</label>
+        <textarea
+          id="prompt"
+          rows="3"
+          required
+          placeholder="Ask the agent to use the desktop…"
+        ></textarea>
+        <button type="submit" id="send">Send</button>
+      </form>
+    </section>
+
+    <section id="desktop-pane">
+      <header>
+        <h2>Desktop</h2>
+      </header>
+      <p id="desktop-placeholder">
+        The desktop appears once a session claims a worker — send a prompt.
+      </p>
+      <iframe id="desktop" title="Session desktop" allow="fullscreen" hidden></iframe>
+    </section>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
