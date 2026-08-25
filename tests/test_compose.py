@@ -1,4 +1,4 @@
-"""The Compose file is the local topology: Postgres, backend, a pool of workers."""
+"""The Compose file is the local topology: Postgres, backend, spawn-on-demand."""
 
 import shutil
 import subprocess
@@ -16,19 +16,21 @@ def test_the_compose_file_lives_at_the_repo_root():
     assert COMPOSE.is_file()
 
 
-def test_the_stack_is_postgres_backend_and_a_worker_pool():
+def test_the_stack_is_postgres_backend_and_a_worker_image():
     text = COMPOSE.read_text()
 
     assert "postgres:" in text
     assert "backend:" in text
-    assert "worker-1:" in text
-    assert "worker-2:" in text
-    assert "WORKER_URLS: http://worker-1:8000,http://worker-2:8000" in text
+    assert "PROVISION_WORKERS" in text
+    assert "WORKER_IMAGE: computer-use-worker:local" in text
+    assert "docker.sock" in text
+    assert "WORKER_URLS" not in text
+    assert "worker-1:" not in text
     assert "postgresql+asyncpg://" in text
 
 
 def test_only_the_backend_publishes_a_host_port():
-    """Worker 6080/5900 stay on the private network; the backend proxies noVNC."""
+    """Spawned workers keep 6080/5900 on the private network."""
     text = COMPOSE.read_text()
 
     assert '"8000:8000"' in text
@@ -40,9 +42,8 @@ def test_only_the_backend_publishes_a_host_port():
 def test_workers_join_a_user_defined_bridge():
     text = COMPOSE.read_text()
 
-    assert "networks:" in text
+    assert "computer-use_agent" in text
     assert "driver: bridge" in text
-    assert "agent:" in text
 
 
 def test_the_backend_image_serves_the_demo_client():
@@ -80,8 +81,9 @@ def test_compose_config_renders():
     )
     assert result.returncode == 0, result.stderr
     rendered = result.stdout
-    assert "worker-1" in rendered
-    assert "worker-2" in rendered
+    assert "worker-1:" not in rendered
+    assert "WORKER_URLS" not in rendered
+    assert "PROVISION_WORKERS" in rendered
     assert 'published: "8000"' in rendered
     assert 'published: "6080"' not in rendered
     assert 'published: "5900"' not in rendered

@@ -2,43 +2,11 @@
 #   cp .env.example .env   # then set ANTHROPIC_API_KEY
 #   docker compose up --build
 #
+# The backend spawns a worker container per session (not a fixed YAML pool).
 # Only the backend publishes a host port. Worker 6080/5900 stay on the
-# user-defined network; the backend proxies noVNC. Grow the pool by copying
-# a worker-* service and appending its URL to WORKER_URLS.
+# user-defined network; the backend proxies noVNC.
 
 name: computer-use
-
-x-worker: &worker
-  build:
-    context: .
-    dockerfile: docker/worker.Dockerfile
-    args:
-      BASE_IMAGE: ${WORKER_BASE_IMAGE:-ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest}
-  environment:
-    ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
-    API_PROVIDER: ${API_PROVIDER:-anthropic}
-  # Desktop browsers (Firefox in the worker image) need a larger /dev/shm
-  # than Compose gives by default.
-  shm_size: "2gb"
-  init: true
-  expose:
-    - "8000"
-    - "6080"
-  networks:
-    - agent
-  healthcheck:
-    test:
-      [
-        "CMD",
-        "python",
-        "-c",
-        "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health')",
-      ]
-    interval: 5s
-    timeout: 5s
-    retries: 24
-    start_period: 45s
-  restart: unless-stopped
 
 services:
   postgres:
@@ -58,10 +26,17 @@ services:
       - agent
     restart: unless-stopped
 
-  worker-1:
-    <<: *worker
-  worker-2:
-    <<: *worker
+  # Built and tagged so the backend can `docker run` copies. Exits immediately.
+  worker:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+      args:
+        BASE_IMAGE: ${WORKER_BASE_IMAGE:-ghcr.io/anthropics/anthropic-quickstarts:computer-use-demo-latest}
+    image: computer-use-worker:local
+    entrypoint: ["/bin/true"]
+    restart: "no"
+    network_mode: none
 
   backend:
     build:
@@ -70,22 +45,28 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://app:app@postgres:5432/app
       BLOB_DIR: /app/data/blobs
-      WORKER_URLS: http://worker-1:8000,http://worker-2:8000
+      PROVISION_WORKERS: "1"
+      WORKER_IMAGE: computer-use-worker:local
+      WORKER_NETWORK: computer-use_agent
+      MAX_WORKERS: ${MAX_WORKERS:-8}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      API_PROVIDER: ${API_PROVIDER:-anthropic}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
-      worker-1:
-        condition: service_healthy
-      worker-2:
-        condition: service_healthy
+      worker:
+        condition: service_completed_successfully
     networks:
       - agent
     restart: unless-stopped
 
 networks:
   agent:
+    name: computer-use_agent
     driver: bridge
 
 volumes:

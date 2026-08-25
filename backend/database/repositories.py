@@ -250,6 +250,51 @@ class WorkerRepository:
         await self._db.flush()
         return worker
 
+    async def count(self) -> int:
+        result = await self._db.execute(select(func.count()).select_from(Worker))
+        return int(result.scalar_one())
+
+    async def reserve(
+        self, session_id: UUID, *, name: str, max_workers: int
+    ) -> Worker | None:
+        """Take a slot for `session_id` before the container exists.
+
+        The insert is the cap: two sessions that reserve together both get a
+        row, then both start containers, so they are not queued on one lock
+        held across Docker's startup.
+        """
+        held = await self.for_session(session_id)
+        if held is not None:
+            return held
+        if await self.count() >= max_workers:
+            return None
+        existing = (
+            await self._db.execute(select(Worker).where(Worker.name == name))
+        ).scalar_one_or_none()
+        if existing is not None:
+            existing.session_id = session_id
+            existing.claimed_at = _utcnow()
+            await self._db.flush()
+            return existing
+        worker = Worker(
+            name=name,
+            base_url="starting://pending",
+            session_id=session_id,
+            claimed_at=_utcnow(),
+        )
+        self._db.add(worker)
+        await self._db.flush()
+        return worker
+
+    async def drop_for_session(self, session_id: UUID) -> str | None:
+        worker = await self.for_session(session_id)
+        if worker is None:
+            return None
+        name = worker.name
+        await self._db.delete(worker)
+        await self._db.flush()
+        return name
+
     async def list_all(self) -> list[Worker]:
         result = await self._db.execute(select(Worker).order_by(Worker.name))
         return list(result.scalars())

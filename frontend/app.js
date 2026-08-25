@@ -24,6 +24,7 @@ const ui = {
   newSession: document.getElementById("new-session"),
   title: document.getElementById("current-title"),
   status: document.getElementById("current-status"),
+  sessionLink: document.getElementById("session-link"),
   deleteSession: document.getElementById("delete-session"),
   log: document.getElementById("event-log"),
   banner: document.getElementById("banner"),
@@ -87,6 +88,23 @@ function shortId(id) {
   return id.slice(0, 8);
 }
 
+function sessionFromUrl() {
+  return new URLSearchParams(location.search).get("session");
+}
+
+function writeSessionUrl(sessionId) {
+  const url = new URL(location.href);
+  if (sessionId) {
+    url.searchParams.set("session", sessionId);
+  } else {
+    url.searchParams.delete("session");
+  }
+  const next = url.pathname + url.search;
+  if (next !== location.pathname + location.search) {
+    history.replaceState(null, "", next);
+  }
+}
+
 function currentSession() {
   return state.sessions.find((session) => session.id === state.currentId) || null;
 }
@@ -146,6 +164,8 @@ function renderCurrent() {
     ui.status.textContent = "";
     ui.status.removeAttribute("data-status");
     ui.deleteSession.hidden = true;
+    ui.sessionLink.hidden = true;
+    ui.sessionLink.removeAttribute("href");
     setBusy(state.sending);
     return;
   }
@@ -153,6 +173,8 @@ function renderCurrent() {
   ui.status.textContent = session.status;
   ui.status.dataset.status = session.status;
   ui.deleteSession.hidden = false;
+  ui.sessionLink.hidden = false;
+  ui.sessionLink.href = `?session=${session.id}`;
   setBusy(state.sending);
 }
 
@@ -260,6 +282,7 @@ async function selectSession(sessionId) {
     return;
   }
   state.currentId = sessionId;
+  writeSessionUrl(sessionId);
   showBanner("");
   hideDesktop();
   renderSessionList();
@@ -300,6 +323,7 @@ ui.deleteSession.addEventListener("click", async () => {
   }
   stopEvents();
   state.currentId = null;
+  writeSessionUrl(null);
   ui.log.replaceChildren();
   hideDesktop();
   showBanner("");
@@ -351,5 +375,33 @@ ui.prompt.addEventListener("keydown", (event) => {
   }
 });
 
-refreshSessions();
 setInterval(refreshSessions, 4000);
+
+async function boot() {
+  await refreshSessions();
+  const id = sessionFromUrl();
+  if (!id) {
+    return;
+  }
+  if (!state.sessions.some((session) => session.id === id)) {
+    showBanner(`unknown session ${id}`);
+    return;
+  }
+  await selectSession(id);
+}
+
+window.addEventListener("popstate", () => {
+  const id = sessionFromUrl();
+  if (id) {
+    selectSession(id);
+    return;
+  }
+  stopEvents();
+  state.currentId = null;
+  ui.log.replaceChildren();
+  hideDesktop();
+  renderSessionList();
+  renderCurrent();
+});
+
+boot();

@@ -30,6 +30,8 @@ class TestDemoClient:
         assert "EventSource" in js.text
         assert "/sessions/${sessionId}/events" in js.text
         assert "/sessions/${sessionId}/desktop" in js.text
+        assert "searchParams" in js.text
+        assert "?session=" in js.text
 
 
 class TestScreenshotBlobs:
