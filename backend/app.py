@@ -23,6 +23,7 @@ from backend.database import (
     create_session_factory,
 )
 from backend.sessions import PoolAllocator, SessionManager
+from backend.sessions.provisioner import DockerProvisioner
 from backend.streaming import EventBus, EventPublisher
 
 FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
@@ -43,7 +44,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             resolved.blob_dir, url_prefix=resolved.blob_url_prefix
         )
         bus = EventBus()
-        allocator = PoolAllocator(factory)
+        provisioner = None
+        if resolved.provision_workers:
+            provisioner = DockerProvisioner(
+                image=resolved.worker_image,
+                network=resolved.worker_network,
+                api_key=resolved.anthropic_api_key,
+                api_provider=resolved.api_provider,
+                ready_timeout=resolved.worker_ready_timeout,
+            )
+        allocator = PoolAllocator(
+            factory, provisioner, max_workers=resolved.max_workers
+        )
         if resolved.worker_urls:
             async with factory() as db:
                 workers = WorkerRepository(db)

@@ -12,6 +12,10 @@ def test_defaults_need_no_environment(monkeypatch):
         "SSE_KEEPALIVE_SECONDS",
         "WORKER_URLS",
         "POOL_RETRY_AFTER_SECONDS",
+        "PROVISION_WORKERS",
+        "WORKER_IMAGE",
+        "WORKER_NETWORK",
+        "MAX_WORKERS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -22,6 +26,8 @@ def test_defaults_need_no_environment(monkeypatch):
     assert settings.sse_keepalive_seconds == 15.0
     assert settings.worker_urls == ()
     assert settings.pool_retry_after_seconds == 5
+    assert settings.provision_workers is False
+    assert settings.max_workers == 8
 
 
 def test_the_environment_wins(monkeypatch):
@@ -31,6 +37,10 @@ def test_the_environment_wins(monkeypatch):
     monkeypatch.setenv("SSE_KEEPALIVE_SECONDS", "30")
     monkeypatch.setenv("WORKER_URLS", "http://w1:8000, http://w2:8000")
     monkeypatch.setenv("POOL_RETRY_AFTER_SECONDS", "12")
+    monkeypatch.setenv("PROVISION_WORKERS", "1")
+    monkeypatch.setenv("WORKER_IMAGE", "worker:test")
+    monkeypatch.setenv("WORKER_NETWORK", "agent")
+    monkeypatch.setenv("MAX_WORKERS", "16")
 
     settings = Settings.from_env()
 
@@ -40,3 +50,7 @@ def test_the_environment_wins(monkeypatch):
     assert settings.sse_keepalive_seconds == 30.0
     assert settings.worker_urls == ("http://w1:8000", "http://w2:8000")
     assert settings.pool_retry_after_seconds == 12
+    assert settings.provision_workers is True
+    assert settings.worker_image == "worker:test"
+    assert settings.worker_network == "agent"
+    assert settings.max_workers == 16

@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 from backend.api.desktop import NoDesktop
 from backend.database import PoolExhausted, SessionBusy, SessionNotFound
 from backend.sessions import WorkerUnreachable
+from backend.sessions.provisioner import ProvisionFailed
 
 
 def install_error_handlers(app: FastAPI) -> None:
@@ -33,6 +34,12 @@ def install_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(WorkerUnreachable)
     async def worker_unreachable(_: Request, exc: WorkerUnreachable) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": str(exc)}
+        )
+
+    @app.exception_handler(ProvisionFailed)
+    async def provision_failed(_: Request, exc: ProvisionFailed) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": str(exc)}
         )

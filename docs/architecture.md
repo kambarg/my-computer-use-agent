@@ -163,27 +163,26 @@ Each of these is a requirement in disguise.
 ### Session manager
 
 Owns the lifecycle: create, look up, list, cancel, destroy. A session
-pairs a conversation with a desktop. The first prompt claims a worker
-from the pool; later prompts on the same session reuse it, because the
-conversation lives on that worker. The desktop goes back to the pool
-when the session is deleted.
+pairs a conversation with a desktop. The first prompt starts a worker
+container for that session (or reuses one already bound). Later prompts
+keep the same desktop, because the conversation lives on that worker.
+Deleting the session stops and removes the container.
 
 A second prompt while a run is in flight is rejected with `409`. Queuing
 would hide backpressure; interrupting would throw away work. The lock
 is the session row itself: `ACTIVE → RUNNING` in the UPDATE's WHERE
 clause, so two writers cannot both proceed.
 
-An empty pool is `503` with `Retry-After`. Postgres claims a free
-worker with `SELECT ... FOR UPDATE SKIP LOCKED` so two sessions take
-different desktops instead of queueing on one row. SQLite serialises
-writers and does not understand `SKIP LOCKED`; the same UPDATE still
-assigns at most one session per worker.
+Two sessions bind in parallel: each reserves a row, then both start
+containers without holding a lock across Docker's startup. `MAX_WORKERS`
+is a safety cap against a stampede, not a demo pool of two. Hitting the
+cap is `503` with `Retry-After`. Tests and a warm `WORKER_URLS` list
+still claim from a registry when provisioning is off.
 
 `POST /sessions/{id}/messages` is the prompt path: bind, start a run on
 the worker, and copy each event through `EventPublisher` so it is
 numbered, persisted, screenshot-rewritten, and fanned out to the SSE
-stream. The worker stays bound after the run so the next prompt keeps
-the same conversation.
+stream.
 
 ### Database
 
@@ -248,29 +247,30 @@ enough.
 The backend serves `frontend/` at `/`. The page lists sessions, creates
 one, posts a prompt, tails `GET /sessions/{id}/events`, and embeds
 `/sessions/{id}/desktop` in an iframe. Screenshots in the log are
-fetched from `/blobs/{key}`. Same origin, no build step — it is a
-demonstration of the backend, not a product surface.
+fetched from `/blobs/{key}`. `/?session=<id>` selects a session so two
+browser windows can each follow a different conversation. Same origin,
+no build step — it is a demonstration of the backend, not a product
+surface.
 
 ### Docker
 
-Local development is a Compose file at the repository root: Postgres,
-the backend, and a fixed pool of worker containers on a user-defined
-bridge (`agent`). Only the backend publishes a host port (`8000`).
-Worker 6080 and 5900 are not published; the backend reverse-proxies
-noVNC, so the browser never sees a worker address.
+Local development is a Compose file at the repository root: Postgres
+and the backend on a user-defined bridge (`computer-use_agent`). The
+worker *image* is built so the backend can spawn copies; no worker
+service stays running. The backend mounts `docker.sock` and starts one
+container per session on that network. Only the backend publishes a
+host port (`8000`). Worker 6080 and 5900 are not published.
 
-Each `worker-*` service is one desktop. `WORKER_URLS` lists them by
-Compose DNS name (`http://worker-1:8000`, …). Grow the pool by adding
-another `worker-*` service and appending its URL. The loop, the tools,
-and the display stay together inside each worker — the topology that
-survives upstream constructing `ToolCollection` internally.
+The loop, the tools, and the display stay together inside each spawned
+worker — the topology that survives upstream constructing
+`ToolCollection` internally.
 
 ## Open decisions
 
 Collected from above, roughly in the order they need answering:
 
-1. Deployment topology (A, B, or C) — local Compose uses a fixed pool
-   of dedicated worker containers (loop and tools in-process with the
-   desktop). Remote deployment can still choose otherwise.
+1. Deployment topology (A, B, or C) — local Compose uses one backend
+   that provisions a dedicated worker container per session. Remote
+   deployment can still choose otherwise.
 2. How upstream gets imported, given it is not a package. The worker
    image inherits `computer_use_demo` from the upstream desktop image.
