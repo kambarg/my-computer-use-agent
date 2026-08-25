@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 import httpx
 from fastapi import FastAPI
 
+from backend.api.desktop import router as desktop_router
 from backend.api.errors import install_error_handlers
 from backend.api.events import router as events_router
 from backend.api.messages import router as messages_router
@@ -54,6 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.event_publisher = publisher
         app.state.allocator = allocator
         app.state.session_manager = manager
+        app.state.http = http
         try:
             yield
         finally:
@@ -68,6 +70,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(sessions_router)
     app.include_router(events_router)
     app.include_router(messages_router)
+    app.include_router(desktop_router)
 
     @app.get("/health")
     async def health() -> dict[str, str]:

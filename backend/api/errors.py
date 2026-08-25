@@ -3,6 +3,7 @@
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
+from backend.api.desktop import NoDesktop
 from backend.database import PoolExhausted, SessionBusy, SessionNotFound
 from backend.sessions import WorkerUnreachable
 
@@ -34,4 +35,10 @@ def install_error_handlers(app: FastAPI) -> None:
     async def worker_unreachable(_: Request, exc: WorkerUnreachable) -> JSONResponse:
         return JSONResponse(
             status_code=status.HTTP_502_BAD_GATEWAY, content={"detail": str(exc)}
+        )
+
+    @app.exception_handler(NoDesktop)
+    async def no_desktop(_: Request, exc: NoDesktop) -> JSONResponse:
+        return JSONResponse(
+            status_code=status.HTTP_409_CONFLICT, content={"detail": str(exc)}
         )

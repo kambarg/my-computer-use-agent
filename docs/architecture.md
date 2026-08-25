@@ -232,14 +232,16 @@ comment keepalive so proxies do not close them.
 
 ### VNC
 
-Gives the client a view of the desktop for its session. The upstream
-image already exposes x11vnc on 5900 and noVNC on 6080, so this is
-mostly routing: map a session to its desktop endpoint and hand the
-client something it can connect to.
+`GET /sessions/{id}/desktop` reverse-proxies the bound worker's noVNC
+(HTTP for `vnc.html` and its assets, WebSocket for `websockify`). The
+client never sees the worker's 6080; that port stays on the private
+network, and a session with no desktop is refused before a connection
+is opened upstream.
 
-**Open:** whether the backend proxies the VNC connection or hands out a
-direct endpoint. Proxying keeps ports closed and lets the backend
-enforce access; direct is simpler and faster.
+A worker registered by API URL gets a `vnc_url` on the same host at
+port 6080 unless one is supplied. The browser is redirected to
+`vnc.html?autoconnect=1` so an iframe of `/sessions/{id}/desktop` is
+enough.
 
 ### Frontend
 

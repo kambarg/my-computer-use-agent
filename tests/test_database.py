@@ -396,6 +396,7 @@ class TestWorkerRegistry:
 
         assert worker.session_id is None
         assert worker.claimed_at is None
+        assert worker.vnc_url == "http://worker-1:6080"
 
     async def test_registering_again_refreshes_rather_than_duplicates(self, db):
         workers = WorkerRepository(db)

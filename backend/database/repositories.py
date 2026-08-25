@@ -15,6 +15,7 @@ from backend.database.models import (
     Worker,
     _utcnow,
 )
+from backend.vnc.urls import vnc_url_from_base
 from shared.events import (
     Event,
     EventPayload,
@@ -234,16 +235,18 @@ class WorkerRepository:
         """Record a worker, or update where it can be reached.
 
         Keyed on name so restarting the pool refreshes the existing rows rather
-        than accumulating duplicates.
+        than accumulating duplicates. A missing `vnc_url` is derived from the
+        API URL: same host, noVNC's port, unpublished.
         """
+        resolved_vnc = vnc_url or vnc_url_from_base(base_url)
         result = await self._db.execute(select(Worker).where(Worker.name == name))
         worker = result.scalar_one_or_none()
         if worker is None:
-            worker = Worker(name=name, base_url=base_url, vnc_url=vnc_url)
+            worker = Worker(name=name, base_url=base_url, vnc_url=resolved_vnc)
             self._db.add(worker)
         else:
             worker.base_url = base_url
-            worker.vnc_url = vnc_url
+            worker.vnc_url = resolved_vnc
         await self._db.flush()
         return worker
 
