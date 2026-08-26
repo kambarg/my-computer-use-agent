@@ -1,0 +1,42 @@
+# Production overlay. Apply on top of the local stack:
+#   docker compose -f compose.yaml -f compose.prod.yaml up --build -d
+#
+# Requires POSTGRES_PASSWORD and ANTHROPIC_API_KEY in the environment
+# (typically `.env`). Swagger / OpenAPI are off. The API binds to
+# localhost only. Spawned workers are unchanged: one container per
+# session, unpublished 6080/5900, via docker.sock.
+#
+# This is a hardened Compose deployment, not a multi-host platform.
+# The backend still needs the Docker socket to spawn workers; treat
+# that as host-equivalent access. See docs/deployment.md.
+
+name: computer-use
+
+services:
+  postgres:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+    mem_limit: 512m
+    logging: &json-logs
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  backend:
+    environment:
+      DATABASE_URL: postgresql+asyncpg://app:${POSTGRES_PASSWORD}@postgres:5432/app
+      ENABLE_DOCS: "0"
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
+    ports: !override
+      - "127.0.0.1:8000:8000"
+    volumes:
+      - blobs:/app/data/blobs
+    mem_limit: 1g
+    logging: *json-logs
+
+  worker:
+    logging: *json-logs
+
+volumes:
+  blobs:

@@ -18,6 +18,14 @@ def _truthy(name: str) -> bool:
     return os.environ.get(name, "").strip().lower() in {"1", "true", "yes"}
 
 
+def _flag(name: str, *, default: bool) -> bool:
+    """Boolean env var that distinguishes unset (use default) from an explicit off."""
+    raw = os.environ.get(name)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in {"1", "true", "yes"}
+
+
 def _worker_urls_from_env() -> tuple[str, ...]:
     raw = os.environ.get("WORKER_URLS", "")
     return tuple(part.strip() for part in raw.split(",") if part.strip())
@@ -38,6 +46,7 @@ class Settings:
     worker_ready_timeout: float = DEFAULT_WORKER_READY_TIMEOUT
     anthropic_api_key: str = ""
     api_provider: str = "anthropic"
+    enable_docs: bool = True
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -67,4 +76,5 @@ class Settings:
             ),
             anthropic_api_key=os.environ.get("ANTHROPIC_API_KEY", ""),
             api_provider=os.environ.get("API_PROVIDER", "anthropic"),
+            enable_docs=_flag("ENABLE_DOCS", default=True),
         )

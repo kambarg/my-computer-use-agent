@@ -80,8 +80,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             bus.close_all()
             await engine.dispose()
 
+    docs = resolved.enable_docs
     app = FastAPI(
-        title="Computer Use Agent Service", version="0.1.0", lifespan=lifespan
+        title="Computer Use Agent Service",
+        version="0.1.0",
+        lifespan=lifespan,
+        docs_url="/docs" if docs else None,
+        redoc_url="/redoc" if docs else None,
+        openapi_url="/openapi.json" if docs else None,
     )
     install_error_handlers(app)
     app.include_router(sessions_router)

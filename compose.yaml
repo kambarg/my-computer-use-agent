@@ -2,6 +2,9 @@
 #   cp .env.example .env   # then set ANTHROPIC_API_KEY
 #   docker compose up --build
 #
+# Production (Swagger off, localhost bind, required DB password):
+#   docker compose -f compose.yaml -f compose.prod.yaml up --build -d
+#
 # The backend spawns a worker container per session (not a fixed YAML pool).
 # Only the backend publishes a host port. Worker 6080/5900 stay on the
 # user-defined network; the backend proxies noVNC.
@@ -51,6 +54,7 @@ services:
       MAX_WORKERS: ${MAX_WORKERS:-8}
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       API_PROVIDER: ${API_PROVIDER:-anthropic}
+      ENABLE_DOCS: "1"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
