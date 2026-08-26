@@ -1,3 +1,5 @@
+"""Settings read from the environment, including the docs switch."""
+
 from pathlib import Path
 
 from backend.config import Settings
@@ -16,6 +18,7 @@ def test_defaults_need_no_environment(monkeypatch):
         "WORKER_IMAGE",
         "WORKER_NETWORK",
         "MAX_WORKERS",
+        "ENABLE_DOCS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -28,6 +31,7 @@ def test_defaults_need_no_environment(monkeypatch):
     assert settings.pool_retry_after_seconds == 5
     assert settings.provision_workers is False
     assert settings.max_workers == 8
+    assert settings.enable_docs is True
 
 
 def test_the_environment_wins(monkeypatch):
@@ -41,6 +45,7 @@ def test_the_environment_wins(monkeypatch):
     monkeypatch.setenv("WORKER_IMAGE", "worker:test")
     monkeypatch.setenv("WORKER_NETWORK", "agent")
     monkeypatch.setenv("MAX_WORKERS", "16")
+    monkeypatch.setenv("ENABLE_DOCS", "0")
 
     settings = Settings.from_env()
 
@@ -54,3 +59,22 @@ def test_the_environment_wins(monkeypatch):
     assert settings.worker_image == "worker:test"
     assert settings.worker_network == "agent"
     assert settings.max_workers == 16
+    assert settings.enable_docs is False
+
+
+def test_docs_stay_on_when_the_flag_is_unset(monkeypatch):
+    monkeypatch.delenv("ENABLE_DOCS", raising=False)
+
+    assert Settings.from_env().enable_docs is True
+
+
+def test_docs_turn_off_when_the_flag_is_explicitly_false(monkeypatch):
+    monkeypatch.setenv("ENABLE_DOCS", "0")
+
+    assert Settings.from_env().enable_docs is False
+
+
+def test_docs_turn_on_when_the_flag_is_true(monkeypatch):
+    monkeypatch.setenv("ENABLE_DOCS", "true")
+
+    assert Settings.from_env().enable_docs is True

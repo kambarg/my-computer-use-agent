@@ -68,58 +68,118 @@ us is any way to reach that from outside a single Streamlit process —
 no API, no persistence, and no notion of more than one session. That
 gap is the project.
 
-See [`docs/architecture.md`](docs/architecture.md) for the boundary
-between the two layers and the design of each new component, and
+At runtime there is one FastAPI backend and one worker container per
+session. The worker holds the loop, the tools, and the desktop. The
+backend owns the HTTP API, Postgres, and a reverse-proxy to noVNC so
+worker ports stay off the host. See
+[`docs/architecture.md`](docs/architecture.md) for that boundary and
 [`docs/agent-loop.md`](docs/agent-loop.md) for how the upstream loop
 works.
 
-## Repository Layout
+## Repository layout
 
 ```
 README.md
-docs/                     Architecture and design notes
-backend/                  NEW  FastAPI application
+docs/                     Architecture, API, and deployment
+backend/                  FastAPI application
     api/                       route handlers
-    sessions/                  session lifecycle and concurrency
+    sessions/                  lifecycle, allocator, Docker provisioner
     database/                  models and persistence
-    streaming/                 progress events to clients
-    vnc/                       desktop connection handling
-    main.py
-frontend/                 NEW  demo client
-    index.html
-    app.js
-    style.css
-docker/                   NEW  images and Compose setup
-computer-use-demo/        Anthropic's existing stack
-    Dockerfile                 Linux desktop image
+    streaming/                 SSE to clients
+    vnc/                       noVNC reverse-proxy
+    app.py
+frontend/                 Demo client (HTML / JS / CSS)
+worker/                   Agent process inside each desktop container
+shared/                   Event schema used by backend and worker
+docker/                   Backend and worker images
+compose.yaml              Local stack
+compose.prod.yaml         Production overlay
+tests/                    Pytest suite (fake worker, no API key)
+computer-use-demo/        Anthropic's existing stack (unpatched)
     computer_use_demo/
         loop.py                the agent loop
         tools/                 computer, bash, edit
-browser-use-demo/         reference only
-agents/                   reference only
-...
 ```
 
-Only `computer-use-demo/` exists today; the directories marked NEW are
-the work of this project.
+Other top-level directories (`agents/`, `browser-use-demo/`,
+`managed-agents/`, …) are upstream quickstarts kept for reference.
 
 ## Getting Started
 
-...
+You need Docker Compose and an [Anthropic API key](https://console.anthropic.com/).
+
+```bash
+cp .env.example .env
+# set ANTHROPIC_API_KEY
+docker compose up --build
+```
+
+Open [http://localhost:8000](http://localhost:8000). That page is the
+demo client: create a session, send a prompt, watch the event log, and
+view the desktop.
+
+Local Compose also serves FastAPI's Swagger UI at
+[http://localhost:8000/docs](http://localhost:8000/docs). It is an API
+explorer, not the product UI.
+
+**Two sessions at once.** Create two sessions, then use **Open in a new
+window** (or `/?session=<uuid>`) so each browser window follows a
+different run. Prompt one with Tokyo weather and the other with New
+York; each gets its own Firefox desktop. The first prompt on a new
+session waits for that container to boot (Xvfb, mutter, noVNC — often
+tens of seconds).
+
+**Only port 8000 is published.** Worker 6080/5900 stay on the private
+Compose network. Delete a session to stop and remove its container.
+
+`MAX_WORKERS` (default 8) is a safety cap, not a pool of two. Hitting
+it returns `503` with `Retry-After`.
+
+## Production
+
+Same images, a tighter overlay: Swagger off, API bound to localhost,
+Postgres password required, log rotation, memory limits, persisted
+screenshot blobs.
+
+```bash
+cp .env.example .env
+# set ANTHROPIC_API_KEY and POSTGRES_PASSWORD
+docker compose -f compose.yaml -f compose.prod.yaml up --build -d
+```
+
+[http://127.0.0.1:8000](http://127.0.0.1:8000) is the demo client.
+`/docs` is not served. Details and caveats (including `docker.sock`)
+are in [`docs/deployment.md`](docs/deployment.md).
 
 ## Development
 
-...
+Python 3.11 (see `.python-version`).
+
+```bash
+python3.11 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt -r dev-requirements.txt
+.venv/bin/python -m pytest -q
+.venv/bin/ruff check .
+.venv/bin/ruff format --check .
+```
+
+Tests talk to a **fake worker** that replays a scripted event
+sequence. They do not call Anthropic and they do not start a desktop.
+
+The fake worker is in-process (`worker/fake.py`); tests start it, there
+is no separate CLI. Prefer Compose when you want a real desktop.
+
+Use `.venv/bin/uvicorn` (Python 3.11). A system uvicorn on 3.10 will
+fail to import `datetime.UTC`.
 
 ## Documentation
 
-- [`docs/architecture.md`](docs/architecture.md) — how the new
-  application layers onto the upstream stack, the constraints that
-  layering inherits, and the design of each new component.
-- [`docs/agent-loop.md`](docs/agent-loop.md) — how Anthropic's sampling
-  loop drives Claude and the tools.
-- `docs/api-design.md` — planned: endpoints, payloads, and the event
-  schema for streamed progress.
+- [`docs/README.md`](docs/README.md) — index
+- [`docs/architecture.md`](docs/architecture.md) — layering, topology, components
+- [`docs/agent-loop.md`](docs/agent-loop.md) — Anthropic's `sampling_loop()`
+- [`docs/api-design.md`](docs/api-design.md) — HTTP API, SSE events, errors
+- [`docs/deployment.md`](docs/deployment.md) — local vs production Compose
 
 ## License
 

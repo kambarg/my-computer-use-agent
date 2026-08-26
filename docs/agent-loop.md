@@ -88,3 +88,12 @@ does not propagate.
 There is no cancellation path. Once started, the loop runs until the
 task finishes or the API fails, so stopping a session early is something
 the backend has to impose from outside.
+
+## Where this project attaches
+
+`worker/runner.py` constructs `AgentWorker`, calls `sampling_loop()`
+with the three callbacks above, and turns each callback into a
+`WorkerEvent`. The backend never imports `computer_use_demo`. It
+starts a worker container, `POST`s `/runs`, and copies the worker's
+SSE stream into the session history. See
+[api-design.md](api-design.md) for those two HTTP surfaces.

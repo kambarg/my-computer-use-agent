@@ -3,9 +3,8 @@
 The design record for this project. The README covers what we are
 building and why; this document covers how the new application attaches
 to Anthropic's stack, what that inheritance constrains, and what each
-new component has to do.
-
-Sections marked **Open** are decisions that have not been made yet.
+new component does. HTTP shapes live in [api-design.md](api-design.md);
+how to run Compose lives in [deployment.md](deployment.md).
 
 ## The boundary
 
@@ -26,47 +25,56 @@ Our side supplies the message history, the API credentials, and the
 callbacks; upstream supplies the loop and the tools. See
 [`agent-loop.md`](agent-loop.md) for what happens between those calls.
 
-### Open: deployment topology
+### Deployment topology (settled)
 
-This is the decision everything else hangs off, and it is not obvious,
-because the upstream tools act on *the machine they run on*. `bash`
-spawns a shell locally, `edit` reads and writes the local filesystem,
-and `computer` drives the local X display. There is no remote-execution
-path built in.
+The tools act on *the machine they run on*. `bash` spawns a local
+shell, `edit` reads and writes the local filesystem, and `computer`
+drives the local X display. There is no remote-execution path built
+in. `sampling_loop()` also constructs `ToolCollection` internally, so
+the loop and the tools cannot be split across a network without
+forking `loop.py`.
 
-Three options, with what each costs:
+That rules out "loop in the backend, tools in the desktop." What we
+shipped is:
 
-**A — Backend inside the desktop container, one container per session.**
-The loop runs in-process, so upstream is imported directly and nothing
-needs a transport. But each container then exposes its own API, so
-something in front has to route callers to the right one, and "session
-management" becomes container orchestration. Shared state — the
-database, the session index — has to live outside the containers.
+**One FastAPI backend. One worker container per session. The worker
+contains the whole upstream stack** — `sampling_loop()`, the tools, and
+the Xvfb/noVNC desktop. The backend owns sessions, Postgres, SSE, and
+a reverse-proxy to that desktop. Two sessions bind in parallel: each
+reserves a registry row, then both `docker run` without holding a lock
+across startup.
 
-**B — Backend outside, one desktop container per session.** One backend
-service, cleanly scalable, with the database and session registry local
-to it. The cost is that the tools have to run inside the desktop
-container while the loop runs outside it, so this needs a small shim in
-the image that accepts tool calls over the network and executes them
-against the local display. That shim is the main piece of new work in
-this option.
+A fixed YAML pool of two workers was rejected: the usage case requires
+a dedicated desktop per new session, not a pre-declared pair. A shared
+desktop with several X displays was rejected: `ComputerTool` reads
+`DISPLAY_NUM` from the process environment, and `bash`/`edit` would
+share one filesystem.
 
-**C — Backend outside, one shared desktop container with several X
-displays.** Cheapest on resources. But `ComputerTool` reads
-`DISPLAY_NUM`, `WIDTH`, and `HEIGHT` from the process environment when
-it is constructed, and the environment is process-global, so two
-concurrent sessions in one process get the same desktop. Worse, `bash`
-and `edit` would share one filesystem across sessions, so tasks could
-interfere with each other. Isolation here is weak enough that it is
-probably only suitable for a demo.
+`computer-use-demo` is not an installable package. The worker image
+inherits `computer_use_demo` from the upstream desktop image;
+`worker/upstream.py` is the import seam (a `sys.path` insert when
+running outside that image).
 
-A related detail that affects A and B: `computer-use-demo/pyproject.toml`
-declares only tooling config — there is no `[project]` table and no
-build backend, so `computer_use_demo` is not an installable package. It
-is imported today by running from inside that directory, and the
-hyphenated parent directory means it cannot be imported from the repo
-root as-is. Whichever topology we pick, importing upstream needs either
-a small packaging shim or an explicit path setup.
+```mermaid
+flowchart TB
+    Browser["Browser :8000"]
+    subgraph Compose["Compose project computer-use"]
+        BE["backend FastAPI"]
+        PG[("Postgres")]
+        Sock["docker.sock"]
+        subgraph Net["network computer-use_agent"]
+            WA["worker A<br/>loop + tools + Xvfb + noVNC"]
+            WB["worker B"]
+        end
+    end
+    Browser -->|HTTP SSE iframe| BE
+    BE --> PG
+    BE --> Sock
+    Sock -->|docker run per session| WA
+    Sock --> WB
+    BE -->|worker :8000| WA
+    BE -->|proxy noVNC :6080| WA
+```
 
 ## Baseline: Anthropic's Computer Use Demo
 
@@ -265,12 +273,20 @@ The loop, the tools, and the display stay together inside each spawned
 worker — the topology that survives upstream constructing
 `ToolCollection` internally.
 
-## Open decisions
+Production is the same topology with a Compose overlay
+(`compose.prod.yaml`): Swagger off, API on localhost, required
+Postgres password, memory limits, persisted blobs. See
+[deployment.md](deployment.md).
 
-Collected from above, roughly in the order they need answering:
+## Known limitations
 
-1. Deployment topology (A, B, or C) — local Compose uses one backend
-   that provisions a dedicated worker container per session. Remote
-   deployment can still choose otherwise.
-2. How upstream gets imported, given it is not a package. The worker
-   image inherits `computer_use_demo` from the upstream desktop image.
+- **`docker.sock` is host-equivalent access.** The backend must create
+  containers. That is acceptable for a single-machine demo; it is not
+  a multi-tenant isolation boundary.
+- **No idle timeout.** A session holds its worker until `DELETE`.
+  Forgotten sessions leak desktops until `MAX_WORKERS`.
+- **No schema migrations.** Tables are created on startup.
+- **Worker base image tag is mutable** unless `WORKER_BASE_IMAGE` is
+  pinned to a digest.
+- **Swagger is on in local Compose.** Production turns it off
+  (`ENABLE_DOCS=0`). The demo UI is `/` either way.

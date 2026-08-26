@@ -1,5 +1,6 @@
 """The Compose file is the local topology: Postgres, backend, spawn-on-demand."""
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -8,6 +9,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
 COMPOSE = ROOT / "compose.yaml"
+COMPOSE_PROD = ROOT / "compose.prod.yaml"
 BACKEND_IMAGE = ROOT / "docker/backend.Dockerfile"
 WORKER_IMAGE = ROOT / "docker/worker.Dockerfile"
 
@@ -22,6 +24,7 @@ def test_the_stack_is_postgres_backend_and_a_worker_image():
     assert "postgres:" in text
     assert "backend:" in text
     assert "PROVISION_WORKERS" in text
+    assert 'ENABLE_DOCS: "1"' in text
     assert "WORKER_IMAGE: computer-use-worker:local" in text
     assert "docker.sock" in text
     assert "WORKER_URLS" not in text
@@ -67,7 +70,18 @@ def test_secrets_are_not_committed():
     ignored = (ROOT / ".gitignore").read_text().splitlines()
 
     assert "ANTHROPIC_API_KEY=" in example
+    assert "POSTGRES_PASSWORD=" in example
     assert ".env" in ignored
+
+
+def test_production_overlay_turns_docs_off_and_binds_localhost():
+    text = COMPOSE_PROD.read_text()
+
+    assert 'ENABLE_DOCS: "0"' in text
+    assert "127.0.0.1:8000:8000" in text
+    assert "POSTGRES_PASSWORD:?set POSTGRES_PASSWORD" in text
+    assert "6080:6080" not in text
+    assert "5900:5900" not in text
 
 
 @pytest.mark.skipif(shutil.which("docker") is None, reason="docker is not installed")
@@ -87,3 +101,34 @@ def test_compose_config_renders():
     assert 'published: "8000"' in rendered
     assert 'published: "6080"' not in rendered
     assert 'published: "5900"' not in rendered
+    assert "ENABLE_DOCS" in rendered
+
+
+@pytest.mark.skipif(shutil.which("docker") is None, reason="docker is not installed")
+def test_production_compose_config_renders():
+    env = os.environ.copy()
+    env["POSTGRES_PASSWORD"] = "prod-secret"
+    env["ANTHROPIC_API_KEY"] = "sk-test"
+    result = subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(COMPOSE),
+            "-f",
+            str(COMPOSE_PROD),
+            "config",
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+        env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    rendered = result.stdout
+    assert "ENABLE_DOCS" in rendered
+    assert '"0"' in rendered or "'0'" in rendered or "ENABLE_DOCS: 0" in rendered
+    assert "127.0.0.1" in rendered
+    assert 'published: "6080"' not in rendered
+    assert "prod-secret" in rendered
